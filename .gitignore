@@ -1,0 +1,63 @@
+# General
+*.DS_Store
+*.log
+*.sqlite3
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+.env
+*.pyc
+__pycache__/
+
+# Django-specific
+*.pot
+*.pyc
+__pycache__/
+db.sqlite3
+media/
+staticfiles/
+local_settings.py
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Spotlight files
+.metadata_never_index
+.metadata_never_index_unless_rootfs
+
+# Trashes
+.Trashes
+
+# Vim swap files
+*.swp
+
+# PyCharm / VSCode
+.idea/
+.vscode/
+
+# Node.js & Frontend (Vue.js and Tailwind CSS)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+build/
+public/
+
+# Tailwind
+*.css.map
+
+# Test files
+coverage/
+pytest_cache/
+
+# Git
+*.orig
