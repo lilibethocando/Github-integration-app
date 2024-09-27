@@ -46,12 +46,18 @@ INSTALLED_APPS = [
     "django_extensions",
     "rest_framework",
     "rest_framework.authtoken",
-    'rest_framework_simplejwt',
+    # 'rest_framework_simplejwt',
     "corsheaders",
-    'oauth2_provider',
+    # 'oauth2_provider',
     'social_django',
-    'drf_social_oauth2',
+    # 'drf_social_oauth2',
     "api",
+
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+    'allauth.socialaccount.providers.github',
 ]
 
 MIDDLEWARE = [
@@ -64,6 +70,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "social_django.middleware.SocialAuthExceptionMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
 ]
 
 ROOT_URLCONF = "backend.urls"
@@ -79,9 +86,10 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "django.template.context_processors.request",
                 # Oauth
-                'social_django.context_processors.backends',
-                'social_django.context_processors.login_redirect',
+                # 'social_django.context_processors.backends',
+                # 'social_django.context_processors.login_redirect',
             ],
         },
     },
@@ -153,16 +161,28 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-AUTH_USER_MODEL = "api.CustomUser"
+# AUTH_USER_MODEL = "api.CustomUser"
 
 AUTHENTICATION_BACKENDS = (
+    'social_core.backends.google.GoogleOAuth2',
     'social_core.backends.github.GithubOAuth2',
-    'drf_social_oauth2.backends.DjangoOAuth2',
     'django.contrib.auth.backends.ModelBackend',
 )
 
-SOCIAL_AUTH_GITHUB_KEY = os.getenv('SOCIAL_AUTH_GITHUB_KEY')
-SOCIAL_AUTH_GITHUB_SECRET = os.getenv('SOCIAL_AUTH_GITHUB_SECRET')
+
+SOCIAL_AUTH_PIPELINE = (
+    'social_core.pipeline.social_auth.social_details',
+    'social_core.pipeline.social_auth.social_uid',
+    'social_core.pipeline.social_auth.auth_allowed',
+    'social_core.pipeline.social_auth.social_user',
+    'social_core.pipeline.user.get_username',
+    'social_core.pipeline.social_auth.associate_by_email',
+    'social_core.pipeline.user.create_user',
+    'social_core.pipeline.social_auth.associate_user',
+    'social_core.pipeline.social_auth.load_extra_data',
+    'social_core.pipeline.user.user_details',
+)
+
 
 DRFSO2_PROPRIETARY_BACKEND_NAME = 'Github'
 
@@ -172,8 +192,10 @@ LOGOUT_REDIRECT_URL = '/'
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'oauth2_provider.contrib.rest_framework.OAuth2Authentication',
+        "rest_framework.authentication.TokenAuthentication",
+        # 'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # 'rest_framework.authentication.SessionAuthentication',
+        # 'rest_framework.authentication.BasicAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -213,14 +235,12 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',
 ]
 
+
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:8000",
 ]
 
-OAUTH2_PROVIDER = {
-    'SCOPES': {'read': 'Read scope', 'write': 'Write scope'},
-    'ACCESS_TOKEN_EXPIRE_SECONDS': 36000,
-}
 
-LOGIN_URL = '/admin/login/'
+
+

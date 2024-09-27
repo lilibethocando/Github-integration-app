@@ -1,16 +1,25 @@
 import os
 import requests
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from social_django.utils import psa
+from django.conf import settings
+from requests.exceptions import HTTPError
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.authentication import TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import get_user_model
-
+from google.oauth2 import id_token
+from .serializers import SocialSerializer
+from .models import GitHubAccount, SelectedRepository
+from django.shortcuts import redirect
+import logging
 
 
 User = get_user_model()
+google_client_id = os.getenv('GOOGLE_CLIENT_ID')
 
 
 @api_view(['POST'])
@@ -19,145 +28,126 @@ def google_auth(request):
     id_token = request.data.get('id_token')
 
     if not id_token:
-        return Response({'error': 'id_token is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-    response = requests.get(f'https://oauth2.googleapis.com/tokeninfo?id_token={id_token}')
-    if response.status_code != 200:
-        return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
-
-    user_data = response.json()
-    
-
-    email = user_data.get('email')
-    name = user_data.get('name')
-    google_user_id = user_data.get('sub') 
-
-    if not email:
-        return Response({'error': 'Email is required from Google'}, status=status.HTTP_400_BAD_REQUEST)
-
-    user, created = User.objects.get_or_create(email=email, defaults={'username': name})
-
-    token, _ = Token.objects.get_or_create(user=user)
-
-    return Response({'token': token.key}, status=status.HTTP_200_OK)
-
-
-@api_view(['POST'])
-@authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated])
-def github_oauth(request):
-    print("starting github oauth")
-    code = request.data.get('code')
-    if not code:
-        return Response({'error': 'Code is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-    client_id = os.getenv('SOCIAL_AUTH_GITHUB_KEY')
-    client_secret = os.getenv('SOCIAL_AUTH_GITHUB_SECRET')
-    redirect_uri = "http://localhost:5173/callback"
-    django_client_id = os.getenv('DJANGO_CLIENT_ID')
-    django_client_secret = os.getenv('DJANGO_CLIENT_SECRET')
-
-    # Step 1: Exchange GitHub code by 'access_token'
-    github_token_url = "https://github.com/login/oauth/access_token"
-    headers = {"Accept": "application/json"}
-    data = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "code": code,
-        "redirect_uri": redirect_uri
-    }
-
-    github_response = requests.post(github_token_url, headers=headers, data=data)
-    github_token_data = github_response.json()
-
-    if 'access_token' not in github_token_data:
-        return Response({'error': 'Failed to obtain GitHub token'}, status=status.HTTP_400_BAD_REQUEST)
-
-    github_access_token = github_token_data['access_token']
-    
-    # Step 2: Convert GitHub token to a Django token
-    convert_token_url = "http://127.0.0.1:8000/auth/convert-token"
-    convert_token_data = {
-        "grant_type": "convert_token",
-        "client_id": django_client_id,  
-        "client_secret": django_client_secret, 
-        "backend": "github",
-        "token": github_access_token
-    }
-
-    convert_token_response = requests.post(convert_token_url, data=convert_token_data)
-    django_token_data = convert_token_response.json()
-
-    if 'access_token' in django_token_data:
-        return Response(django_token_data, status=status.HTTP_200_OK)
-    else:
-        return Response(django_token_data, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def store_github_user(request):
-    """Guarda las credenciales de GitHub del usuario autenticado en la base de datos."""
-    print("starting store github user")
-    print("Request headers:", request.headers)
-    print("User authenticated:", request.user.is_authenticated)
-    access_token = request.data.get('access_token')
-    github_username = request.data.get('github_username')
-
-    if not access_token or not github_username:
-        return Response({'error': 'Missing access token or GitHub username'}, status=400)
+        return Response({'error': 'No id_token provided'}, status=400)
 
     user = request.user
-    if not user.is_authenticated:
-        return Response({'error': 'User not authenticated'}, status=401)
+    return Response({'message': 'User authenticated successfully'})
 
-    user.github_token = access_token
-    user.github_username = github_username
-    user.save()
 
-    return Response({
-        'message': 'GitHub account linked successfully',
-        'github_username': github_username
-    }, status=200)
+def github_login(request):
+    client_id = client_id = os.getenv('SOCIAL_AUTH_GITHUB_KEY')
+    redirect_uri = 'http://localhost:8000/api/callback'
+    scope = 'repo'  
+
+    github_url = f'https://github.com/login/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}'
+    return redirect(github_url)
+
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def github_callback(request):
+    code = request.GET.get('code')
+
+    if not code:
+        return Response({'error': 'No code provided'}, status=400)
+
+
+    token_url = 'https://github.com/login/oauth/access_token'
+    client_id = os.getenv('SOCIAL_AUTH_GITHUB_KEY')
+    client_secret = os.getenv('SOCIAL_AUTH_GITHUB_SECRET')
+    redirect_uri = 'http://localhost:8000/api/callback'
+
+    data = {
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'code': code,
+        'redirect_uri': redirect_uri,
+    }
+
+    headers = {'Accept': 'application/json'}
+    response = requests.post(token_url, data=data, headers=headers)
+
+    if response.status_code != 200:
+        return Response({'error': 'Failed to fetch access token from GitHub'}, status=500)
+
+    access_token = response.json().get('access_token')
+
+    if not access_token:
+        return Response({'error': 'No access token returned'}, status=500)
+
+    user_data_url = 'https://api.github.com/user'
+    user_response = requests.get(user_data_url, headers={'Authorization': f'Bearer {access_token}'})
+
+    if user_response.status_code != 200:
+        return Response({'error': 'Failed to fetch user data from GitHub'}, status=500)
+
+    user_data = user_response.json()
+
+    name = user_data.get('name')
+    username = user_data.get('login')
+    id = user_data.get('id')
+
+    
+    user, created = User.objects.get_or_create(username=username, defaults={'name': name, 'id': id})
+
+    github_account, _ = GitHubAccount.objects.get_or_create(
+        user=user,
+        defaults={
+            'access_token': access_token,
+            'github_username': username,
+            'repositories': user_data.get('repos_url')
+        }
+    )
+
+    token, _ = Token.objects.get_or_create(user=user) 
+
+    redirect_url = f'http://localhost:5173/dashboard?token={access_token}'  
+    return redirect(redirect_url, user.is_authenticated)
+
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+# @psa()
 def get_github_repositories(request):
+    """Get the list of GitHub repositories for the authenticated user."""
     user = request.user
-    if not user.github_token:
-        return Response({'error': 'GitHub account not linked'}, status=400)
 
-    headers = {
-        'Authorization': f'Bearer {user.github_token}',
-        'Accept': 'application/vnd.github.v3+json'
-    }
-    response = requests.get('https://api.github.com/user/repos', headers=headers)
+    github_info = GitHubAccount.objects.all()
+    repos = github_info[0].repositories
+    print(repos)
+    return Response({'repositories': repos})
 
-    if response.status_code != 200:
-        return Response({'error': 'Failed to fetch repositories'}, status=response.status_code)
-
-    repos = response.json()
-    return Response(repos)
+    
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def select_repository(request):
+    """Save a repository selected by the authenticated user."""
     user = request.user
-    if not user.github_token:
-        return Response({'error': 'GitHub account not linked'}, status=400)
 
     repo_name = request.data.get('repoName')
-    if not repo_name:
-        return Response({'error': 'No repository name provided'}, status=400)
+    repo_url = request.data.get('repoUrl')
 
-    user.selected_repository = repo_name
-    user.save()
+    if not repo_name or not repo_url:
+        return Response({'error': 'Repository name or URL not provided'}, status=400)
 
-    return Response({'message': 'Repository selected successfully'})
+    github_info = GitHubAccount.objects.all()
+    selected_repository, created = SelectedRepository.objects.get_or_create(
+        github_account=github_info[0],
+        repo_name=repo_name,
+        defaults={'repo_url': repo_url}
+    )
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def check_github_link(request):
-    user = request.user
-    return Response({'isLinked': bool(user.github_token)})
+    if created:
+        message = 'Repository selected and saved successfully.'
+    else:
+        message = 'Repository already exists in database.'
+
+    return Response({'message': message})
+
+
+
+
+

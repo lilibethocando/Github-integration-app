@@ -18,8 +18,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from django.http import HttpResponse
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from api.views import store_github_user
+
 def home_view(request):
     """
     Home view that returns a welcome message.
@@ -30,9 +29,8 @@ def home_view(request):
     )
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path('admin/', admin.site.urls, name='admin'),
     path('', home_view),
-    path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
-    path('auth/', include('drf_social_oauth2.urls', namespace='drf')),
+    path('accounts/', include('allauth.urls')),
     path('api/', include('api.urls')),
 ]
