@@ -26,7 +26,7 @@ const routes = [
   },
 
   {
-    path: '/callback',
+    path: '/doGithub',
     name: 'GitHubCallback',
     component: GitHubCallback
   },
